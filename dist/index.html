@@ -1,4 +1,101 @@
-<!doctype html> <html lang="en"> <head> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1"> <title>openGames</title> <link rel="stylesheet" href="style.css"> </head> <body> <nav id="appMenu" class="menu"> <div class="menu-inner"> <strong class="brand">openGames</strong> <div class="spacer"></div> <button class="btn active" id="btnPong" aria-pressed="true">openPong</button> <button class="btn" id="btnBreakout" aria-pressed="false">openBreakout</button> </div> </nav>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenArcade</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav id="appMenu" class="menu">
+  <div class="menu-inner">
+    <strong class="brand">OpenArcade</strong>
+    <div class="spacer"></div>
+    <button class="hamburger" id="hamburger" aria-label="Games menu" aria-expanded="false">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+  </div>
+  <div class="drawer" id="drawer" aria-hidden="true">
+    <button class="drawer-item active" id="btnPong" aria-pressed="true">openPong</button>
+    <button class="drawer-item" id="btnBreakout" aria-pressed="false">openBreakout</button>
+  </div>
+</nav>
+
 <canvas id="game"></canvas>
 
-<!-- Load app scripts first; they define window.openPong and window.openBreakout --> <script src="apps/openPong.js" defer></script> <script src="apps/openBreakout.js" defer></script> <!-- Loader runs after DOMContentLoaded (after deferred scripts executed) --> <script> document.addEventListener('DOMContentLoaded', function () { const canvas = document.getElementById('game'); const btnPong = document.getElementById('btnPong'); const btnBreakout = document.getElementById('btnBreakout'); let current = null; function setActiveButton(target) { [btnPong, btnBreakout].forEach(b => { const active = (b === target); b.classList.toggle('active', active); b.setAttribute('aria-pressed', active ? 'true' : 'false'); }); } function clearCanvas() { const ctx = canvas.getContext('2d'); const dpr = Math.max(1, window.devicePixelRatio || 1); const w = Math.floor(window.innerWidth * dpr); const h = Math.floor(window.innerHeight * dpr); canvas.width = w; canvas.height = h; canvas.style.width = window.innerWidth + 'px'; canvas.style.height = window.innerHeight + 'px'; ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); } function loadApp(name, btn) { if (current && typeof current.destroy === 'function') { current.destroy(); current = null; } clearCanvas(); if (name === 'pong' && window.openPong && typeof window.openPong.init === 'function') { current = window.openPong.init({ canvas, menuEl: document.getElementById('appMenu') }); } else if (name === 'breakout' && window.openBreakout && typeof window.openBreakout.init === 'function') { current = window.openBreakout.init({ canvas, menuEl: document.getElementById('appMenu') }); } setActiveButton(btn); } btnPong.addEventListener('click', () => loadApp('pong', btnPong)); btnBreakout.addEventListener('click', () => loadApp('breakout', btnBreakout)); loadApp('pong', btnPong); }); </script> </body> </html>
+<script src="apps/openPong.js" defer></script>
+<script src="apps/openBreakout.js" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var canvas    = document.getElementById('game');
+  var hamburger = document.getElementById('hamburger');
+  var drawer    = document.getElementById('drawer');
+  var btnPong     = document.getElementById('btnPong');
+  var btnBreakout = document.getElementById('btnBreakout');
+  var allItems  = [btnPong, btnBreakout];
+  var current   = null;
+  var drawerOpen = false;
+
+  function toggleDrawer(force) {
+    drawerOpen = (force !== undefined) ? force : !drawerOpen;
+    drawer.classList.toggle('open', drawerOpen);
+    hamburger.setAttribute('aria-expanded', drawerOpen ? 'true' : 'false');
+    drawer.setAttribute('aria-hidden',      drawerOpen ? 'false' : 'true');
+  }
+
+  function setActiveItem(target) {
+    allItems.forEach(function (b) {
+      var active = (b === target);
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  function clearCanvas() {
+    var ctx = canvas.getContext('2d');
+    var dpr = Math.max(1, window.devicePixelRatio || 1);
+    var w = Math.floor(window.innerWidth  * dpr);
+    var h = Math.floor(window.innerHeight * dpr);
+    canvas.width  = w; canvas.height = h;
+    canvas.style.width  = window.innerWidth  + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  function loadApp(name, btn) {
+    if (current && typeof current.destroy === 'function') {
+      current.destroy();
+      current = null;
+    }
+    clearCanvas();
+    var menuEl = document.getElementById('appMenu');
+    if (name === 'pong' && window.openPong) {
+      current = window.openPong.init({ canvas: canvas, menuEl: menuEl });
+    } else if (name === 'breakout' && window.openBreakout) {
+      current = window.openBreakout.init({ canvas: canvas, menuEl: menuEl });
+    }
+    setActiveItem(btn);
+    toggleDrawer(false);
+  }
+
+  hamburger.addEventListener('click', function () { toggleDrawer(); });
+
+  document.addEventListener('click', function (e) {
+    if (drawerOpen && !document.getElementById('appMenu').contains(e.target)) {
+      toggleDrawer(false);
+    }
+  });
+
+  btnPong.addEventListener('click',     function () { loadApp('pong',     btnPong);     });
+  btnBreakout.addEventListener('click', function () { loadApp('breakout', btnBreakout); });
+
+  loadApp('pong', btnPong);
+});
+</script>
+
+</body>
+</html>

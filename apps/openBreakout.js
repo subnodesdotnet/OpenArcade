@@ -1,4 +1,4 @@
-// openBreakout — fullscreen Breakout with 10 levels
+// openBreakout — fullscreen Breakout with 5 levels
 // Exposes window.openBreakout.init({ canvas, menuEl }) -> { destroy() }
 
 (function () {
@@ -18,7 +18,7 @@ const title = create('h1', 'title', null, 'openBreakout');
 const hud = create('div', 'hud', 'hudEl');
 const scoreBox = create('div', 'item', 'scoreBox', 'Score: 0');
 const livesBox = create('div', 'item', 'livesBox', 'Lives: 3');
-const levelBox = create('div', 'item', 'levelBox', 'Level: 1 / 10');
+const levelBox = create('div', 'item', 'levelBox', 'Level: 1 / 5');
 hud.append(scoreBox, livesBox, levelBox);
 
 const controls = create('div', 'controls');
@@ -52,7 +52,7 @@ function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
 function updateHUD() {
   scoreBox.textContent = 'Score: ' + state.score;
   livesBox.textContent = 'Lives: ' + state.lives;
-  levelBox.textContent = 'Level: ' + (state.levelIndex + 1) + ' / 10';
+  levelBox.textContent = 'Level: ' + (state.levelIndex + 1) + ' / 5';
 }
 
 // Measure bottom edge of menu, title and HUD (CSS px) and convert to canvas px
@@ -135,38 +135,70 @@ function showLevelOverlay() {
 }
 
 function levelDefinition(i) {
-  const full = () => (r,c,rows,cols) => true;
-  const checker = () => (r,c) => ((r + c) % 2 === 0);
-  const pyramid = () => (r,c,rows,cols) => {
-    const mid = Math.floor(cols / 2);
-    const width = cols - r * 2;
-    return c >= mid - Math.floor(width/2) && c < mid + Math.ceil(width/2);
-  };
-  const frame = () => (r,c,rows,cols) => (r === 0 || r === rows - 1 || c === 0 || c === cols - 1);
-  const diag = () => (r,c,rows,cols) => (r === c || r + c === cols - 1);
-  const band3 = () => (r,c,rows) => (r === 1 || r === Math.floor(rows/2) || r === rows - 2);
-  const steps = () => (r,c,rows) => (c <= r + 1);
-  const innerHole = () => (r,c,rows,cols) => !(r > 1 && r < rows - 2 && c > 1 && c < cols - 2);
-  const sparseRandom = (density=0.7) => (r,c) => Math.random() < density;
+  // 5 levels of increasing difficulty
+  // hp visual: 1 = solid filled, 2 = outlined + 1 inner line, 3 = outlined + 2 inner lines
 
-  const hp1 = (r,c,b) => 1;
-  const hpRow = (r,c,b) => Math.max(1, b + Math.floor(r/2));
-  const hpBand = (r,c,b) => (r % 3 === 1 ? b + 1 : b);
+  // L1 Easy — full open grid, all single-hit
+  const full    = () => () => true;
+  // L2 Intermediate — alternating checker, single-hit, forces precision
+  const checker = () => (r, c) => (r + c) % 2 === 0;
+  // L3 Medium — frame border + two vertical columns through center, mixed hp
+  const frameAndCols = () => (r, c, rows, cols) => {
+    const c1 = Math.round(cols * 0.33);
+    const c2 = Math.round(cols * 0.67);
+    return r === 0 || r === rows - 1 || c === 0 || c === cols - 1 || c === c1 || c === c2;
+  };
+  // L4 Hard — dense grid with a few gaps, hp increases toward back (top)
+  const denseGaps = () => (r, c, rows, cols) => {
+    const mid = Math.floor(cols / 2);
+    // create a diamond-shaped hole in the center rows
+    if (r >= 2 && r <= 4) {
+      const spread = 3 - Math.abs(r - 3);
+      if (c >= mid - spread && c <= mid + spread) return false;
+    }
+    return true;
+  };
+  // L5 Very Hard — full fortress, all armored (hp 2–3)
+  // same full pattern as L1 but all bricks take multiple hits
 
   const defs = [
-    { rows: 5, cols: 10, pattern: full(),            hp: hp1,                    hpBase: 1 },
-    { rows: 6, cols: 11, pattern: checker(),         hp: hp1,                    hpBase: 1 },
-    { rows: 7, cols: 12, pattern: innerHole(),       hp: hp1,                    hpBase: 1 },
-    { rows: 7, cols: 11, pattern: pyramid(),         hp: (r,c,b)=>b+(r>3?1:0),   hpBase: 1 },
-    { rows: 6, cols: 12, pattern: frame(),           hp: (r,c,b)=>b+1,           hpBase: 1 },
-    { rows: 8, cols: 12, pattern: diag(),            hp: hpRow,                  hpBase: 1 },
-    { rows: 7, cols: 10, pattern: steps(),           hp: hpBand,                 hpBase: 1 },
-    { rows: 8, cols: 12, pattern: band3(),           hp: (r,c,b)=>b+1,           hpBase: 1 },
-    { rows: 6, cols: 12, pattern: sparseRandom(0.7), hp: hp1,                    hpBase: 2 },
-    { rows: 9, cols: 13, pattern: full(),            hp: (r,c,b)=>b+(r%3===0?1:0), hpBase: 2 },
+    // Level 1 — Easy: 4 rows × 8 cols, all hp=1
+    {
+      rows: 4, cols: 8,
+      pattern: full(),
+      hp: () => 1,
+      hpBase: 1
+    },
+    // Level 2 — Intermediate: 5 rows × 10 cols, checker, hp=1
+    {
+      rows: 5, cols: 10,
+      pattern: checker(),
+      hp: () => 1,
+      hpBase: 1
+    },
+    // Level 3 — Medium: 6 rows × 11 cols, frame+columns, hp mixed
+    {
+      rows: 6, cols: 11,
+      pattern: frameAndCols(),
+      hp: (r, c, b) => (r === 0 ? 2 : 1),
+      hpBase: 1
+    },
+    // Level 4 — Hard: 7 rows × 12 cols, dense with center gap, hp by row
+    {
+      rows: 7, cols: 12,
+      pattern: denseGaps(),
+      hp: (r, c, b) => (r <= 1 ? 3 : r <= 3 ? 2 : 1),
+      hpBase: 1
+    },
+    // Level 5 — Very Hard: 8 rows × 13 cols, full fortress, all armored
+    {
+      rows: 8, cols: 13,
+      pattern: full(),
+      hp: (r, c, b) => (r <= 2 ? 3 : 2),
+      hpBase: 2
+    },
   ];
-  const d = defs[i % defs.length];
-  return d;
+  return defs[i % defs.length];
 }
 
 function buildLevel(i) {
@@ -349,12 +381,18 @@ function loseLife() {
 
 function nextLevel() {
   state.levelIndex += 1;
-  if (state.levelIndex >= 10) {
-    overlay.textContent = 'You beat all 10 levels! Final score: ' + state.score + ' — Press Space to play again';
-    overlay.classList.remove('hidden');
+  if (state.levelIndex >= 5) {
+    const finalScore = state.score;
     state.levelIndex = 0;
     state.lives = 3;
+    state.score = 0;
     updateHUD();
+    buildLevel(state.levelIndex);
+    state.paddle.w = Math.max(80 * dpr, Math.round(width * 0.12));
+    resetBallToPaddle();
+    overlay.textContent = 'You cleared all 5 levels! Score: ' + finalScore + ' — Press Space to play again';
+    overlay.classList.remove('hidden');
+    return;
   }
   buildLevel(state.levelIndex);
   const minW = Math.max(70 * dpr, Math.round(width * 0.08));
