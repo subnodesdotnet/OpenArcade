@@ -458,10 +458,14 @@ window.addEventListener('mousemove', onMouseMove);
 window.addEventListener('resize', onResize);
 pauseBtn.addEventListener('click', onPauseClick);
 
-// Init
+// Init — defer brick measurement until after browser's first layout pass
 layout();
 lastTime = performance.now();
-raf = requestAnimationFrame(loop);
+requestAnimationFrame(function () {
+  measureUiSafeTop();
+  buildLevel(state.levelIndex);
+  raf = requestAnimationFrame(loop);
+});
 
 const api = {
   destroy() {
