@@ -1,0 +1,145 @@
+:root {
+--fg: #000;
+--bg: #fff;
+--muted: #555;
+}
+
+html, body {
+margin: 0;
+padding: 0;
+height: 100%;
+background: var(--bg);
+color: var(--fg);
+font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+/* Fullscreen canvas /
+canvas#game {
+position: fixed;
+inset: 0;
+width: 100vw;
+height: 100vh;
+display: block;
+background: var(--bg);
+z-index: 0; / game is under UI and menu */
+}
+
+/* Top menu */
+.menu {
+position: fixed;
+top: 0;
+left: 0; right: 0;
+height: 56px;
+background: rgba(255,255,255,0.96);
+border-bottom: 1px solid #000;
+z-index: 1000;
+}
+.menu-inner {
+max-width: 1200px;
+margin: 0 auto;
+height: 100%;
+display: flex;
+align-items: center;
+gap: 10px;
+padding: 0 12px;
+}
+.menu .brand {
+font-weight: 800;
+letter-spacing: 0.02em;
+}
+.menu .spacer {
+flex: 1;
+}
+.btn {
+appearance: none;
+border: 1px solid #000;
+background: #fff;
+color: #000;
+padding: 8px 12px;
+border-radius: 10px;
+font-weight: 700;
+cursor: pointer;
+}
+.btn.active {
+background: #000;
+color: #fff;
+}
+.btn:focus-visible {
+outline: 3px solid #222;
+outline-offset: 2px;
+}
+
+/* Shared UI elements for apps (positioned over canvas) /
+.title {
+position: fixed;
+top: 72px;       / push below the menu */
+left: 0; right: 0;
+margin: 0;
+text-align: center;
+font-weight: 800;
+letter-spacing: 0.02em;
+color: var(--fg);
+z-index: 10;
+pointer-events: none;
+font-size: clamp(28px, 6vw, 72px);
+}
+
+.hud {
+position: fixed;
+top: 150px;      /* below title */
+left: 50%;
+transform: translateX(-50%);
+display: flex;
+align-items: center;
+justify-content: center;
+gap: 24px;
+z-index: 10;
+pointer-events: none;
+font-weight: 700;
+font-size: clamp(16px, 2.4vw, 24px);
+color: var(--fg);
+}
+.hud .item { min-width: 8ch; text-align: center; }
+.score { min-width: 2ch; text-align: center; }
+.divider { color: var(--muted); opacity: 0.85; }
+
+.hint {
+position: fixed;
+bottom: 14px;
+left: 50%;
+transform: translateX(-50%);
+color: var(--muted);
+font-size: clamp(12px, 1.6vw, 14px);
+letter-spacing: 0.02em;
+z-index: 10;
+text-align: center;
+user-select: none;
+}
+
+.overlay {
+position: fixed;
+left: 50%; top: 50%;
+transform: translate(-50%, -50%);
+background: rgba(255,255,255,0.92);
+border: 1px solid #000;
+padding: 16px 20px;
+border-radius: 10px;
+color: var(--fg);
+font-weight: 700;
+z-index: 20;
+text-align: center;
+box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+max-width: min(90vw, 620px);
+}
+
+.controls {
+position: fixed;
+top: 72px;
+right: 16px;
+display: flex;
+gap: 10px;
+z-index: 15;
+}
+
+/* Utility (hidden) */
+.hidden { display: none !important; }

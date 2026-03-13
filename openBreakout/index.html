@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>openBreakout</title>
+  <style>
+    /* Minimal black-on-white style (same visual language as openpong) */
+    :root {
+      --fg: #000;   /* foreground (text, shapes) */
+      --bg: #fff;   /* background */
+      --muted: #555;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+
+    canvas#game {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      background: var(--bg);
+    }
+
+    /* Big bold Helvetica title at the top */
+    h1.title {
+      position: fixed;
+      top: 12px;
+      left: 0;
+      right: 0;
+      margin: 0;
+      text-align: center;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      color: var(--fg);
+      z-index: 2;
+      pointer-events: none;
+      font-size: clamp(28px, 6vw, 72px);
+    }
+
+    /* HUD with score, lives, level */
+    .hud {
+      position: fixed;
+      top: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      z-index: 2;
+      pointer-events: none;
+      font-weight: 700;
+      font-size: clamp(16px, 2.4vw, 24px);
+      color: var(--fg);
+    }
+    .hud .item { min-width: 8ch; text-align: center; }
+
+    /* Controls hint at the bottom */
+    .hint {
+      position: fixed;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: var(--muted);
+      font-size: clamp(12px, 1.6vw, 14px);
+      letter-spacing: 0.02em;
+      z-index: 2;
+      text-align: center;
+      user-select: none;
+    }
+
+    /* Center overlay for Start / Pause / Level messages */
+    .overlay {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,255,255,0.92);
+      border: 1px solid #000;
+      padding: 16px 20px;
+      border-radius: 10px;
+      color: var(--fg);
+      font-weight: 700;
+      z-index: 3;
+      text-align: center;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+      max-width: min(90vw, 620px);
+    }
+
+    .controls {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      gap: 10px;
+      z-index: 4;
+    }
+    .btn {
+      appearance: none;
+      border: 1px solid #000;
+      background: #fff;
+      color: #000;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn:focus-visible {
+      outline: 3px solid #222;
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">openBreakout</h1>
+
+  <!-- Optional buttons (you can add functions if you like) -->
+  <div class="controls">
+    <button class="btn" id="pauseBtn" title="Pause/Resume (P)">Pause</button>
+  </div>
+
+  <div class="hud" aria-hidden="true">
+    <div class="item" id="scoreBox">Score: 0</div>
+    <div class="item" id="livesBox">Lives: 3</div>
+    <div class="item" id="levelBox">Level: 1 / 10</div>
+  </div>
+
+  <div class="hint">
+    Controls — Move: Left/Right or A/D or Mouse • Start/Continue: Space • Pause: P
+  </div>
+
+  <div class="overlay" id="overlay">
+    Press Space to start
+  </div>
+
+  <canvas id="game"></canvas>
+
+  <script>
+    /*
+      openBreakout — A classic Breakout-style game.
+      Essentials of the original Breakout (Atari, 1976):
+      - A paddle at the bottom reflects a ball.
+      - Bricks at the top are destroyed when hit.
+      - Ball bounces off walls and paddle; you lose a life if it falls below.
+      - Clear all bricks to advance to the next level.
+
+      This version:
+      - 10 handcrafted levels (increasing difficulty, some multi-hit bricks).
+      - Clean black-on-white visuals.
+      - Mouse or keyboard controls.
+      - Resolution-aware (devicePixelRatio) for crisp rendering.
+    */
+
+    (() => {
+      // Canvas setup
+      const canvas = document.getElementById('game');
+      const ctx = canvas.getContext('2d'); // We'll fill the background white each frame.
+
+      // HUD elements
+      const scoreBox = document.getElementById('scoreBox');
+      const livesBox = document.getElementById('livesBox');
+      const levelBox = document.getElementById('levelBox');
+      const overlay = document.getElementById('overlay');
+      const pauseBtn = document.getElementById('pauseBtn');
+
+      // Dimensions and device pixel ratio for sharp visuals
+      let width = 0, height = 0, dpr = Math.max(1, window.devicePixelRatio || 1);
+
+      // Game state container
+      const state = {
+        running: false,    // true while the ball moves
+        paused: false,
+        awaitingServe: true, // waiting for Space to launch the ball
+        levelIndex: 0,     // 0..9 (10 levels)
+        lives: 3,
+        score: 0,
+        // Paddle
+        paddle: { x: 0, y: 0, w: 0, h: 0, speed: 0, move: 0 }, // move: -1 left, +1 right, 0 idle
+        // Ball
+        ball: { x: 0, y: 0, r: 0, speed: 0, vx: 0, vy: 0, stuck: true }, // stuck: follows paddle before serve
+        // Bricks
+        bricks: [], // array of {x,y,w,h,hp,alive}
+        // Control flags
+        keys: Object.create(null),
+        mouseX: null, // optional mouse control: track mouse x
+      };
+
+      // Convenience: clamp value
+      function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
+
+      // Update HUD text
+      function updateHUD() {
+        scoreBox.textContent = 'Score: ' + state.score;
+        livesBox.textContent = 'Lives: ' + state.lives;
+        levelBox.textContent = 'Level: ' + (state.levelIndex + 1) + ' / 10';
+      }
+
+      // Layout the canvas and scale with DPR
+      function layout() {
+        dpr = Math.max(1, window.devicePixelRatio || 1);
+        width  = Math.floor(window.innerWidth  * dpr);
+        height = Math.floor(window.innerHeight * dpr);
+
+        canvas.width = width;
+        canvas.height = height;
+        canvas.style.width = window.innerWidth + 'px';
+        canvas.style.height = window.innerHeight + 'px';
+
+        // Paddle size and position (relative to screen)
+        state.paddle.w = Math.max(80 * dpr, Math.round(width * 0.12));
+        state.paddle.h = Math.max(14 * dpr, Math.round(height * 0.02));
+        state.paddle.speed = Math.max(6 * dpr, Math.round(width * 0.012));
+        state.paddle.x = (width - state.paddle.w) / 2;
+        state.paddle.y = height - Math.max(60 * dpr, Math.round(height * 0.08));
+
+        // Ball size and reset
+        state.ball.r = Math.max(6 * dpr, Math.round(Math.min(width, height) * 0.012));
+        resetBallToPaddle();
+
+        // Build (or rebuild) current level bricks with current size
+        buildLevel(state.levelIndex);
+
+        updateHUD();
+      }
+
+      // Reset ball to paddle and wait for serve
+      function resetBallToPaddle() {
+        state.ball.speed = Math.max(6 * dpr, Math.round(Math.min(width, height) * 0.015)) + state.levelIndex * (1.2 * dpr);
+        state.ball.x = state.paddle.x + state.paddle.w / 2;
+        state.ball.y = state.paddle.y - state.ball.r - 2 * dpr;
+        state.ball.vx = 0;
+        state.ball.vy = 0;
+        state.ball.stuck = true;
+        state.awaitingServe = true;
+        state.running = false;
+        showOverlay('Press Space to start');
+      }
+
+      // Start serve: give the ball an initial angle and speed
+      function startServe() {
+        if (!state.awaitingServe || state.paused) return;
+        // Slight random angle upward: between -30° and -150° mirrored around vertical
+        const angles = [ -Math.PI * 0.30, -Math.PI * 0.40, -Math.PI * 0.50, -Math.PI * 0.60, -Math.PI * 0.70 ];
+        const angle = angles[Math.floor(Math.random() * angles.length)];
+        // Randomly aim left or right around upward direction
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        const a = -Math.PI / 2 + (angle + Math.PI / 2) * dir;
+        state.ball.vx = Math.cos(a) * state.ball.speed;
+        state.ball.vy = Math.sin(a) * state.ball.speed;
+        state.ball.stuck = false;
+        state.awaitingServe = false;
+        state.running = true;
+        hideOverlay();
+      }
+
+      // Pause / resume
+      function setPaused(p) {
+        state.paused = !!p;
+        if (state.paused) {
+          showOverlay('Paused — Press P to resume');
+          pauseBtn.textContent = 'Resume';
+        } else {
+          hideOverlay();
+          pauseBtn.textContent = 'Pause';
+        }
+      }
+
+      // Overlay helpers
+      function showOverlay(msg) {
+        overlay.textContent = msg;
+        overlay.style.display = 'block';
+      }
+      function hideOverlay() {
+        overlay.style.display = 'none';
+      }
+
+      // Level builder: generate 10 levels with increasing difficulty
+      function buildLevel(i) {
+        // Brick layout area at the top part of the screen
+        const topMargin = Math.round(height * 0.08);
+        const sideMargin = Math.round(width * 0.06);
+        const areaW = width - sideMargin * 2;
+
+        // Define parameters by level index
+        const def = levelDefinition(i);
+
+        const rows = def.rows;
+        const cols = def.cols;
+        const hpBase = def.hpBase; // base hit points
+        const gapX = Math.max(6 * dpr, Math.round(width * 0.004));
+        const gapY = Math.max(6 * dpr, Math.round(height * 0.008));
+
+        const brickW = Math.floor((areaW - (cols - 1) * gapX) / cols);
+        const brickH = Math.max(16 * dpr, Math.round(Math.min(height, width) * 0.03));
+
+        // Build bricks according to a pattern function
+        const bricks = [];
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const include = def.pattern(r, c, rows, cols);
+            if (!include) continue;
+            const x = sideMargin + c * (brickW + gapX);
+            const y = topMargin + r * (brickH + gapY);
+            const hp = def.hp(r, c, hpBase);
+            bricks.push({ x, y, w: brickW, h: brickH, hp, alive: true });
+          }
+        }
+        state.bricks = bricks;
+      }
+
+      // 10 level definitions with different patterns and hit points
+      function levelDefinition(i) {
+        // Helper patterns
+        const full = () => (r,c,rows,cols) => true;
+        const checker = () => (r,c) => ((r + c) % 2 === 0);
+        const pyramid = () => (r,c,rows,cols) => {
+          const mid = Math.floor(cols / 2);
+          const width = cols - r * 2;
+          return c >= mid - Math.floor(width/2) && c < mid + Math.ceil(width/2);
+        };
+        const frame = () => (r,c,rows,cols) => (r === 0 || r === rows - 1 || c === 0 || c === cols - 1);
+        const diag = () => (r,c,rows,cols) => (r === c || r + c === cols - 1);
+        const band3 = () => (r,c,rows) => (r === 1 || r === Math.floor(rows/2) || r === rows - 2);
+        const steps = () => (r,c,rows) => (c <= r + 1); // left steps
+        const innerHole = () => (r,c,rows,cols) => !(r > 1 && r < rows - 2 && c > 1 && c < cols - 2);
+        const sparseRandom = (density=0.6) => (r,c) => Math.random() < density;
+
+        // HP functions
+        const hp1 = (r,c,b) => 1;
+        const hpRowScale = (r,c,b) => Math.max(1, b + Math.floor(r/2));
+        const hpBand = (r,c,b) => (r % 3 === 1 ? b + 1 : b);
+        const hpEdgeStrong = (r,c,rows,cols,b) => ((r===0 || r===rows-1 || c===0 || c===cols-1) ? b+1 : b);
+
+        // Define each level
+        const defs = [
+          { rows: 5, cols: 10, pattern: full(),       hp: hp1,                 hpBase: 1 },
+          { rows: 6, cols: 11, pattern: checker(),    hp: hp1,                 hpBase: 1 },
+          { rows: 7, cols: 12, pattern: innerHole(),  hp: hp1,                 hpBase: 1 },
+          { rows: 7, cols: 11, pattern: pyramid(),    hp: (r,c,b)=>b+(r>3?1:0), hpBase: 1 },
+          { rows: 6, cols: 12, pattern: frame(),      hp: (r,c,b)=>b+1,        hpBase: 1 },
+          { rows: 8, cols: 12, pattern: diag(),       hp: hpRowScale,          hpBase: 1 },
+          { rows: 7, cols: 10, pattern: steps(),      hp: hpBand,              hpBase: 1 },
+          { rows: 8, cols: 12, pattern: band3(),      hp: (r,c,b)=>b+1,        hpBase: 1 },
+          { rows: 6, cols: 12, pattern: sparseRandom(0.7), hp: hp1,            hpBase: 2 },
+          { rows: 9, cols: 13, pattern: full(),       hp: (r,c,b)=>b+(r%3===0?1:0), hpBase: 2 },
+        ];
+        // Wrap hp to give it rows/cols when needed
+        const d = defs[i % defs.length];
+        const pattern = (r,c,rows,cols) => d.pattern(r,c,rows,cols);
+        const hp = (r,c,b) => {
+          // Some hp functions need rows/cols info; try both signatures:
+          try { return d.hp(r,c,b); } catch { return 1; }
+        };
+        return { rows: d.rows, cols: d.cols, pattern, hp, hpBase: d.hpBase };
+      }
+
+      // Drawing
+      function drawBackground() {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      function drawPaddle() {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(state.paddle.x, state.paddle.y, state.paddle.w, state.paddle.h);
+      }
+
+      function drawBall() {
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(state.ball.x, state.ball.y, state.ball.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function drawBricks() {
+        ctx.save();
+        ctx.fillStyle = '#000';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = Math.max(2 * dpr, 2);
+        for (const b of state.bricks) {
+          if (!b.alive) continue;
+          // Draw brick outline and inner bars depending on HP
+          // hp=1: solid fill; hp=2: outline + one inner bar; hp>=3: outline + two bars
+          if (b.hp <= 1) {
+            ctx.fillRect(b.x, b.y, b.w, b.h);
+          } else {
+            // Outline
+            ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+            // Inner bars to show hit points
+            const pad = Math.max(3 * dpr, Math.round(b.h * 0.18));
+            const y1 = b.y + pad;
+            const y2 = b.y + b.h - pad;
+            ctx.beginPath();
+            ctx.moveTo(b.x + pad, y1);
+            ctx.lineTo(b.x + b.w - pad, y1);
+            if (b.hp >= 3) {
+              ctx.moveTo(b.x + pad, y2);
+              ctx.lineTo(b.x + b.w - pad, y2);
+            }
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+
+      // Physics and update
+      function update(dt) {
+        if (state.paused) return;
+
+        // Keyboard paddle movement (A/Left = -1, D/Right = +1)
+        state.paddle.move = 0;
+        if (state.keys['ArrowLeft'] || state.keys['a'] || state.keys['A']) state.paddle.move -= 1;
+        if (state.keys['ArrowRight'] || state.keys['d'] || state.keys['D']) state.paddle.move += 1;
+
+        // Mouse control (if mouseX is set)
+        if (state.mouseX !== null) {
+          // Convert CSS mouseX to canvas (dpr-scaled) coordinate
+          const target = state.mouseX * dpr - state.paddle.w / 2;
+          // Smooth follow so it doesn’t teleport
+          const dx = target - state.paddle.x;
+          const maxStep = state.paddle.speed * (dt * 60); // scale by frame time
+          if (Math.abs(dx) > maxStep) {
+            state.paddle.x += Math.sign(dx) * maxStep;
+          } else {
+            state.paddle.x = target;
+          }
+        } else {
+          // Keyboard movement
+          state.paddle.x += state.paddle.move * state.paddle.speed * (dt * 60);
+        }
+
+        // Clamp paddle inside screen
+        state.paddle.x = clamp(state.paddle.x, 0, width - state.paddle.w);
+
+        // If ball is stuck (awaiting serve), make it follow the paddle
+        if (state.ball.stuck) {
+          state.ball.x = state.paddle.x + state.paddle.w / 2;
+          state.ball.y = state.paddle.y - state.ball.r - 2 * dpr;
+          return; // no further updates while stuck
+        }
+
+        if (!state.running) return;
+
+        // Move ball
+        state.ball.x += state.ball.vx * (dt * 60);
+        state.ball.y += state.ball.vy * (dt * 60);
+
+        const r = state.ball.r;
+
+        // Wall collisions: left/right
+        if (state.ball.x - r <= 0 && state.ball.vx < 0) {
+          state.ball.x = r;
+          state.ball.vx *= -1;
+        } else if (state.ball.x + r >= width && state.ball.vx > 0) {
+          state.ball.x = width - r;
+          state.ball.vx *= -1;
+        }
+
+        // Top wall
+        if (state.ball.y - r <= 0 && state.ball.vy < 0) {
+          state.ball.y = r;
+          state.ball.vy *= -1;
+        }
+
+        // Bottom: lose a life
+        if (state.ball.y - r > height) {
+          loseLife();
+          return;
+        }
+
+        // Paddle collision (AABB + circle simple)
+        if (circleIntersectsRect(state.ball.x, state.ball.y, r, state.paddle.x, state.paddle.y, state.paddle.w, state.paddle.h)
+            && state.ball.vy > 0) {
+          // Compute reflection angle based on hit position
+          const hit = (state.ball.x - (state.paddle.x + state.paddle.w / 2)) / (state.paddle.w / 2);
+          const maxBounce = Math.PI / 3; // 60 degrees
+          const angle = -Math.PI / 2 + hit * maxBounce; // around straight up
+          const speed = Math.hypot(state.ball.vx, state.ball.vy) * 1.01; // tiny speed up
+          state.ball.vx = Math.cos(angle) * speed;
+          state.ball.vy = Math.sin(angle) * speed;
+          // Place ball just above the paddle to avoid sticking
+          state.ball.y = state.paddle.y - r - 1;
+        }
+
+        // Brick collisions — check against first brick hit each frame
+        // For performance, we stop after one collision; looks fine in practice
+        for (const b of state.bricks) {
+          if (!b.alive) continue;
+          if (!circleIntersectsRect(state.ball.x, state.ball.y, r, b.x, b.y, b.w, b.h)) continue;
+
+          // Decide which axis to reflect using penetration depths
+          const prevX = state.ball.x - state.ball.vx * (dt * 60);
+          const prevY = state.ball.y - state.ball.vy * (dt * 60);
+          const fromLeft   = prevX <= b.x && state.ball.vx > 0;
+          const fromRight  = prevX >= b.x + b.w && state.ball.vx < 0;
+          const fromTop    = prevY <= b.y && state.ball.vy > 0;
+          const fromBottom = prevY >= b.y + b.h && state.ball.vy < 0;
+
+          const overlapLeft   = (state.ball.x + r) - b.x;
+          const overlapRight  = (b.x + b.w) - (state.ball.x - r);
+          const overlapTop    = (state.ball.y + r) - b.y;
+          const overlapBottom = (b.y + b.h) - (state.ball.y - r);
+
+          const minHoriz = Math.min(overlapLeft, overlapRight);
+          const minVert  = Math.min(overlapTop, overlapBottom);
+
+          if ((minHoriz < minVert && (fromLeft || fromRight)) || (!fromTop && !fromBottom && minHoriz < minVert)) {
+            // Reflect horizontally
+            state.ball.vx *= -1;
+            if (fromLeft)  state.ball.x = b.x - r - 1;
+            if (fromRight) state.ball.x = b.x + b.w + r + 1;
+          } else {
+            // Reflect vertically
+            state.ball.vy *= -1;
+            if (fromTop)    state.ball.y = b.y - r - 1;
+            if (fromBottom) state.ball.y = b.y + b.h + r + 1;
+          }
+
+          // Damage brick
+          b.hp -= 1;
+          if (b.hp <= 0) {
+            b.alive = false;
+            state.score += 100;
+          } else {
+            state.score += 50;
+          }
+          updateHUD();
+
+          // Check level cleared
+          if (state.bricks.every(br => !br.alive)) {
+            nextLevel();
+          }
+          break; // handle one collision per frame
+        }
+      }
+
+      // Collision helper: circle-rectangle intersection
+      function circleIntersectsRect(cx, cy, cr, rx, ry, rw, rh) {
+        const nearestX = clamp(cx, rx, rx + rw);
+        const nearestY = clamp(cy, ry, ry + rh);
+        const dx = cx - nearestX;
+        const dy = cy - nearestY;
+        return (dx * dx + dy * dy) <= cr * cr;
+      }
+
+      // Life lost
+      function loseLife() {
+        state.lives -= 1;
+        updateHUD();
+        if (state.lives <= 0) {
+          gameOver();
+        } else {
+          resetBallToPaddle();
+          showOverlay('Life lost — Press Space');
+        }
+      }
+
+      // Advance to next level
+      function nextLevel() {
+        state.levelIndex += 1;
+        if (state.levelIndex >= 10) {
+          // Victory condition after level 10
+          const finalScore = state.score;
+          state.levelIndex = 0;
+          state.lives = 3;
+          state.score = 0;
+          // Reset paddle width for new game
+          state.paddle.w = Math.max(80 * dpr, Math.round(width * 0.12));
+          buildLevel(state.levelIndex);
+          resetBallToPaddle();
+          showOverlay('You beat all 10 levels! Final score: ' + finalScore + ' — Press Space to play again');
+          updateHUD();
+          return;
+        }
+        buildLevel(state.levelIndex);
+        // Make paddle slightly smaller on higher levels (not below a minimum)
+        const minW = Math.max(70 * dpr, Math.round(width * 0.08));
+        state.paddle.w = clamp(Math.round(state.paddle.w * 0.94), minW, Math.round(width * 0.2));
+        resetBallToPaddle();
+        showOverlay('Level ' + (state.levelIndex + 1) + ' — Press Space');
+      }
+
+      function gameOver() {
+        const finalScore = state.score;
+        state.running = false;
+        state.awaitingServe = true;
+        // Reset progression
+        state.levelIndex = 0;
+        state.lives = 3;
+        state.score = 0;
+        updateHUD();
+        buildLevel(state.levelIndex);
+        resetBallToPaddle();
+        showOverlay('Game Over — Score: ' + finalScore + ' — Press Space to restart');
+      }
+
+      // Render
+      function render() {
+        drawBackground();
+        drawBricks();
+        drawPaddle();
+        drawBall();
+      }
+
+      // Main loop — uses time delta for smoother motion across frame rates
+      let lastTime = 0;
+      function loop(ts) {
+        const dt = Math.min(0.05, (ts - lastTime) / 1000) || 0.016; // cap dt, default ~1/60
+        lastTime = ts;
+
+        update(dt);
+        render();
+        requestAnimationFrame(loop);
+      }
+
+      // Input handling
+      window.addEventListener('keydown', (e) => {
+        const k = e.key;
+        // Space = start/continue
+        if (k === ' ' || k === 'Space' || e.code === 'Space') {
+          e.preventDefault();
+          if (state.paused) return; // ignore while paused
+          if (state.awaitingServe) startServe();
+          return;
+        }
+        // Pause toggle
+        if (k === 'p' || k === 'P') {
+          setPaused(!state.paused);
+          return;
+        }
+        // Movement keys
+        if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'a' || k === 'A' || k === 'd' || k === 'D') {
+          e.preventDefault();
+          state.keys[k] = true;
+        }
+      }, { passive: false });
+
+      window.addEventListener('keyup', (e) => {
+        state.keys[e.key] = false;
+      });
+
+      // Mouse move: track x in CSS pixels
+      window.addEventListener('mousemove', (e) => {
+        state.mouseX = e.clientX; // CSS px; convert in update()
+      });
+
+      // Pause button
+      pauseBtn.addEventListener('click', () => setPaused(!state.paused));
+
+      // Resize handling
+      window.addEventListener('resize', () => {
+        layout();
+      });
+
+      // Init
+      layout();
+      showOverlay('Press Space to start');
+      updateHUD();
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>

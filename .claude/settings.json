@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git tag:*)",
+      "Bash(git log:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(ls:*)",
+      "Bash(npx serve:*)",
+      "Bash(python3 -m http.server:*)",
+      "Bash(open index.html:*)"
+    ]
+  }
+}
