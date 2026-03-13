@@ -55,14 +55,13 @@ function updateHUD() {
   levelBox.textContent = 'Level: ' + (state.levelIndex + 1) + ' / 5';
 }
 
-// Measure bottom edge of menu, title and HUD (CSS px) and convert to canvas px
+// Measure bottom edge of menu and HUD (CSS px) and convert to canvas px.
+// Falls back to 210px minimum to guard against getBCR returning 0 on first paint.
 function measureUiSafeTop() {
-  const menuBottom = menuEl ? menuEl.getBoundingClientRect().bottom : 0;
-  const titleBottom = title.getBoundingClientRect().bottom;
-  const hudBottom = hud.getBoundingClientRect().bottom;
-  const bottomCSS = Math.max(menuBottom, titleBottom, hudBottom);
-  const paddingCSS = 24;
-  state.uiTopMarginCanvas = Math.round((bottomCSS + paddingCSS) * dpr);
+  const menuB = menuEl ? menuEl.getBoundingClientRect().bottom : 56;
+  const hudB  = hud.getBoundingClientRect().bottom;
+  const css   = Math.max(menuB, hudB, 0);
+  state.uiTopMarginCanvas = Math.round(Math.max(css + 24, 210) * dpr);
 }
 
 function layout() {
